@@ -121,3 +121,27 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+# Mac system files
+.DS_Store
+
+# Data (don't push datasets)
+data/raw/*
+data/processed/*
+
+# But keep the folder placeholders
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Python
+venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Artifacts (trained models — too large for git)
+artifacts/*.joblib
+
+# Keep artifact folder placeholder
+!artifacts/.gitkeep
+
