@@ -7,6 +7,10 @@ Dual-mode Streamlit dashboard for credit-card churn prediction.
 - Evaluate mode: upload data WITH a 'Churn' column -> also get Gini/AUC metrics
 """
 
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -15,9 +19,9 @@ import json
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_auc_score
 
-# Import shared preprocessing (same logic as training!)
-from src.data_prep import clean_data
+from src.data_prep import clean_data          # <-- this must come AFTER sys.path
 from src.features import engineer_features, encode_categoricals
+
 
 
 # ---------- Load artifacts once (cached) ----------
