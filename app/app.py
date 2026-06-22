@@ -16,10 +16,9 @@ import pandas as pd
 import numpy as np
 import joblib
 import json
-import matplotlib.pyplot as plt
 from sklearn.metrics import roc_auc_score
 
-from src.data_prep import clean_data          # <-- this must come AFTER sys.path
+from src.data_prep import clean_data, to_churn_target  # <-- this must come AFTER sys.path
 from src.features import engineer_features, encode_categoricals
 
 
@@ -44,7 +43,7 @@ XGB, LGBM, KMEANS, SCALER, W, COLS, CFEATS, PERSONAS = load_artifacts()
 # ---------- Preprocessing (mirrors training) ----------
 def preprocess(raw):
     """Apply the same cleaning + feature engineering as training."""
-    df = clean_data(raw) if "Attrition_Flag" in raw.columns else raw.copy()
+    df = clean_data(raw)
     df = engineer_features(df)
     df = encode_categoricals(df)
 
@@ -59,24 +58,76 @@ def preprocess(raw):
     return df[COLS]
 
 
+def extract_true_labels(raw):
+    """Return churn labels when an upload includes a supported target column."""
+    if "Churn" in raw.columns:
+        return to_churn_target(raw["Churn"]).values
+
+    for label_col in ("Attrition_Flag", "True_Label"):
+        if label_col in raw.columns:
+            return to_churn_target(raw[label_col]).values
+
+    return None
+
+
+def build_prediction_output(raw, p_ens, segments):
+    """Keep identifiers as metadata in exports without using them as features."""
+    out = pd.DataFrame(index=raw.index)
+
+    if "CLIENTNUM" in raw.columns:
+        out["CLIENTNUM"] = raw["CLIENTNUM"]
+
+    for label_col in ("Attrition_Flag", "True_Label"):
+        if label_col in raw.columns:
+            out["True_Label"] = raw[label_col]
+            break
+    else:
+        if "Churn" in raw.columns:
+            churn = to_churn_target(raw["Churn"])
+            out["True_Label"] = np.where(
+                churn == 1,
+                "Attrited Customer",
+                "Existing Customer",
+            )
+
+    out["Churn_Probability"] = p_ens.round(3)
+    out["Predicted_Label"] = np.where(
+        p_ens > 0.5,
+        "Attrited Customer",
+        "Existing Customer",
+    )
+    out["Segment"] = segments
+    out["Risk"] = np.where(p_ens > 0.5, "HIGH", "LOW")
+    return out
+
+
+def clientnum_leakage_strength(raw, y_true):
+    """Measure whether CLIENTNUM alone nearly separates the true labels."""
+    if y_true is None or "CLIENTNUM" not in raw.columns or len(set(y_true)) < 2:
+        return None
+
+    clientnums = pd.to_numeric(raw["CLIENTNUM"], errors="coerce")
+    if clientnums.isna().any():
+        return None
+
+    auc = roc_auc_score(y_true, clientnums)
+    return max(auc, 1 - auc)
+
+
 # ---------- UI ----------
 st.set_page_config(page_title="Churn Dashboard", layout="wide")
 st.title("💳 Credit Card Churn Prediction Dashboard")
 st.markdown("Upload customer data to predict churn. "
-            "Include a **`Churn`** column to also see model performance (Gini).")
+            "Include a **`Churn`**, **`Attrition_Flag`**, or **`True_Label`** "
+            "column to also see model performance (Gini).")
 
 file = st.file_uploader("Upload CSV", type="csv")
 
 if file:
     raw = pd.read_csv(file)
-    has_labels = "Churn" in raw.columns or "Attrition_Flag" in raw.columns
 
     # Extract true labels if present (before preprocessing drops them)
-    y_true = None
-    if "Churn" in raw.columns:
-        y_true = raw["Churn"].values
-    elif "Attrition_Flag" in raw.columns:
-        y_true = (raw["Attrition_Flag"] == "Attrited Customer").astype(int).values
+    y_true = extract_true_labels(raw)
 
     # Preprocess
     X = preprocess(raw)
@@ -91,11 +142,8 @@ if file:
 
     # --- Predictions tab ---
     with tab1:
-        out = pd.DataFrame({
-            "Churn_Probability": p_ens.round(3),
-            "Segment": [PERSONAS[str(c)] for c in X["Cluster"]],
-            "Risk": np.where(p_ens > 0.5, "HIGH", "LOW")
-        })
+        segments = [PERSONAS[str(c)] for c in X["Cluster"]]
+        out = build_prediction_output(raw, p_ens, segments)
         st.dataframe(out, use_container_width=True)
         c1, c2, c3 = st.columns(3)
         c1.metric("Customers", len(out))
@@ -113,7 +161,16 @@ if file:
     with tab3:
         if y_true is not None:
             def gini(y, p): return 2 * roc_auc_score(y, p) - 1
-            st.success("Labels detected — evaluating model performance (backtest)")
+            leakage_strength = clientnum_leakage_strength(raw, y_true)
+            if leakage_strength is not None and leakage_strength >= 0.98:
+                st.warning(
+                    "CLIENTNUM alone nearly separates the uploaded labels. "
+                    "The model still excludes CLIENTNUM, but this backtest file "
+                    "is likely label-leaked and should not be used as a final "
+                    "generalization check."
+                )
+
+            st.success("Labels detected - evaluating model performance (backtest)")
             metrics = pd.DataFrame({
                 "Model": ["XGBoost", "LightGBM", "Ensemble"],
                 "Gini": [gini(y_true, p_xgb), gini(y_true, p_lgbm), gini(y_true, p_ens)],
@@ -123,7 +180,7 @@ if file:
             }).round(4)
             st.dataframe(metrics, use_container_width=True)
         else:
-            st.info("No `Churn` label in upload → prediction-only mode. "
-                    "Add a `Churn` column to see Gini/AUC.")
+            st.info("No label column in upload - prediction-only mode. "
+                    "Add `Churn`, `Attrition_Flag`, or `True_Label` to see Gini/AUC.")
 else:
     st.info("⬅ Upload a CSV file to begin.")
