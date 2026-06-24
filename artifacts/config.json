@@ -1,0 +1,44 @@
+{
+  "ENSEMBLE_WEIGHT": 0.15000000000000002,
+  "BEST_THRESHOLD_SMOTE": 0.25,
+  "FEATURE_COLUMNS": [
+    "CreditScore",
+    "Age",
+    "Tenure",
+    "Balance",
+    "NumOfProducts",
+    "HasCrCard",
+    "IsActiveMember",
+    "EstimatedSalary",
+    "HasBalance",
+    "BalanceSalaryRatio",
+    "TenureByAge",
+    "Geography_Germany",
+    "Geography_Spain",
+    "Gender_Male"
+  ],
+  "MODEL_FEATURES": [
+    "CreditScore",
+    "Age",
+    "Tenure",
+    "Balance",
+    "NumOfProducts",
+    "HasCrCard",
+    "IsActiveMember",
+    "EstimatedSalary",
+    "HasBalance",
+    "BalanceSalaryRatio",
+    "TenureByAge",
+    "Geography_Germany",
+    "Geography_Spain",
+    "Gender_Male",
+    "Cluster"
+  ],
+  "PERSONA_MAP": {
+    "0": "At-Risk Wealthy ",
+    "1": "Low-Balance Mass ",
+    "2": "Wealthy Mid-Risk",
+    "3": "Affluent Watchlist "
+  },
+  "OPTIMAL_K": 4
+}
